@@ -16,6 +16,7 @@ use tower::ServiceExt;
 use crate::analytics::Peer;
 use crate::dashboard::Dashboard;
 use crate::hostname::request_hostname;
+use crate::nsite_address::parse_nsite_address;
 use crate::serve::{RequestOrigin, SiteServer};
 use crate::tunnel::gateway::Tunnels;
 
@@ -47,6 +48,23 @@ pub enum Via {
 impl App {
     pub async fn handle(&self, mut request: Request<Body>, via: Via) -> Response<Body> {
         let hostname = request_host(&request);
+
+        // NCC Browser forwards the selected service path to the endpoint.
+        // The address selects an enabled nsite without trusting Host.
+        if hostname == self.dashboard_host {
+            if let Some(selector) = request.uri().path().strip_prefix("/nsite/") {
+                let selector = selector.split('/').next().unwrap_or_default();
+                let address = match parse_nsite_address(selector) {
+                    Ok(address) => address,
+                    Err(_) => return Response::builder().status(http::StatusCode::NOT_FOUND).body(Body::from("Unknown nsite address.")).expect("response"),
+                };
+                let (scheme, peer) = match via {
+                    Via::Proxy(proxy) => (request_scheme(request.headers()), Peer::Proxy(proxy)),
+                    Via::Tls(visitor) => ("https", Peer::Visitor(visitor)),
+                };
+                return self.site.serve_address(request, &address, scheme, peer).await;
+            }
+        }
 
         if hostname != self.dashboard_host {
             let (scheme, peer) = match via {

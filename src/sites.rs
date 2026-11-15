@@ -51,6 +51,16 @@ pub fn find_host(conn: &Connection, hostname: &str) -> rusqlite::Result<Option<S
     .optional()
 }
 
+/// A stable enabled hostname for a site's canonical Nostr address.
+pub fn find_site_hostname(conn: &Connection, address: &NsiteAddress) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT hostname FROM hosts WHERE enabled = 1 AND pubkey = ? AND kind = ? AND identifier = ? ORDER BY hostname LIMIT 1",
+        params![address.pubkey, address.kind, address.identifier],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
 pub fn load_host(conn: &Connection, hostname: &str) -> rusqlite::Result<Option<Host>> {
     conn.prepare_cached(&format!("SELECT {HOST_COLUMNS} FROM hosts WHERE hostname = ?"))?
         .query_row([hostname.to_lowercase()], Host::from_row)

@@ -39,11 +39,11 @@ use crate::link_previews::splice::{splice, Page};
 use crate::link_previews::{Answer, LinkPreviews, ScriptPage, IMAGE_WAIT, PREVIEW_PATH, WAIT};
 use crate::log::{with_err, Logger};
 use crate::mime::content_type;
-use crate::nsite_address::encode_naddr;
+use crate::nsite_address::{encode_naddr, NsiteAddress};
 use crate::seo::canonical_link;
 use crate::site_csp::{SiteCsp, GATEWAY_CSP};
 use crate::site_env::ENV_PATH;
-use crate::sites::{find_host, normalize_site_path, resolve_site_path, ResolvedFile, ServedHost};
+use crate::sites::{find_host, find_site_hostname, normalize_site_path, resolve_site_path, ResolvedFile, ServedHost};
 use crate::util::{http_date, lowercase_extname};
 
 /// Where a request came from, as settled by the listener that accepted it.
@@ -185,6 +185,16 @@ impl ServeCache {
         Ok(Some(site))
     }
 
+    /// Resolve a canonical nsite address to the first enabled hostname serving it.
+    pub async fn lookup_address(&self, address: &NsiteAddress) -> anyhow::Result<Option<Arc<CachedSite>>> {
+        let address = address.clone();
+        let hostname = self.db.call(move |conn| Ok(find_site_hostname(conn, &address)?)).await?;
+        match hostname {
+            Some(hostname) => self.lookup(&hostname).await,
+            None => Ok(None),
+        }
+    }
+
     /// Drop everything. Host writes are rare enough that no writer needs to
     /// work out which hostnames its change touched.
     pub fn clear(&self) {
@@ -258,6 +268,38 @@ impl SiteServer {
         let mut response = self.handle(&parts, &origin, peer).await;
         allow_cross_origin(response.headers_mut());
         response
+    }
+
+    /// Serve a site selected by an NCC path selector. The hostname comes
+    /// from an enabled host row, never from the incoming request.
+    pub async fn serve_address(&self, request: Request<Body>, address: &NsiteAddress, scheme: &'static str, peer: Peer) -> Reply {
+        let site = match self.deps.serve_cache.lookup_address(address).await {
+            Ok(Some(site)) => site,
+            Ok(None) => return text(StatusCode::NOT_FOUND, "This nsite is not configured."),
+            Err(error) => {
+                self.deps.log.error("site_unavailable", with_err(fields! { "nsite" => crate::nsite_address::format_nsite_address(address) }, &error));
+                return text(StatusCode::SERVICE_UNAVAILABLE, "This site is temporarily unavailable. Try again in a moment.");
+            }
+        };
+        let (mut parts, body) = request.into_parts();
+        let Some(path) = parts.uri.path().strip_prefix("/nsite/") else {
+            return text(StatusCode::NOT_FOUND, "Not found.");
+        };
+        let path = path.split_once('/').map_or("/", |(_, tail)| if tail.is_empty() { "/" } else { tail });
+        let path = if path.starts_with('/') { path.to_string() } else { format!("/{path}") };
+        let path_and_query = match parts.uri.query() {
+            Some(query) => format!("{path}?{query}"),
+            None => path,
+        };
+        match path_and_query.parse() {
+            Ok(uri) => parts.uri = uri,
+            Err(_) => return text(StatusCode::BAD_REQUEST, "Invalid site path."),
+        }
+        let hostname = site.host.host.hostname.clone();
+        if let Ok(value) = HeaderValue::from_str(&hostname) {
+            parts.headers.insert(header::HOST, value);
+        }
+        self.serve(Request::from_parts(parts, body), RequestOrigin { hostname, scheme }, peer).await
     }
 
     async fn handle(&self, request: &Parts, origin: &RequestOrigin, peer: Peer) -> Reply {

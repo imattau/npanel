@@ -40,6 +40,14 @@ Everything hangs off the `Host` header, checked in one middleware in
 `/api` and otherwise to the built dashboard SPA. A tunnel's hostname is passed
 to its agent. Any other hostname is served as an nsite.
 
+One dashboard-host path is reserved for NCC Browser: `/nsite/<npub-or-naddr>/…`
+selects an enabled host by its canonical Nostr site address and serves the
+remaining path from that nsite. This lets one NCC service endpoint expose
+multiple sites while keeping the normal hostname route intact. The lookup
+chooses the alphabetically first enabled hostname when a site has more than
+one; that host's serving settings and generated URLs apply. See
+[NCC Browser](ncc.md) for the service URL format.
+
 Only `Host` is read — or, over HTTP/2, which has none, `:authority`, which is
 the same thing by another name (`request_host`). Ports and the trailing dot of an FQDN are stripped and the
 name is lowercased (`request_hostname`, `src/hostname.rs`, shared with onion

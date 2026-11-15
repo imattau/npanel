@@ -341,6 +341,11 @@ async fn a_published_site_is_deployed_built_and_served() {
     assert_eq!(headers["link"], "<https://docs.example.com/>; rel=\"canonical\"");
     // The author lists no relays, so the gateway's are named.
     let naddr = crate::nsite_address::encode_naddr(&NsiteAddress { pubkey: manifest.pubkey.clone(), kind: 15128, identifier: String::new() }, &["wss://relay.invalid".into()]);
+    // NCC endpoints select an enabled site through the dashboard host's path.
+    let (ncc_status, ncc_headers, ncc_body) = gw.request("GET", "panel.example.com", &format!("/nsite/{npub}/app.js?v=1"), &[], None).await;
+    assert_eq!(ncc_status, StatusCode::OK);
+    assert_eq!(ncc_headers["nsite-location"], format!("nsite://{naddr}/app.js?v=1"));
+    assert_eq!(ncc_body, script.as_bytes());
     assert_eq!(headers["nsite-location"], format!("nsite://{naddr}/"));
     assert!(!headers.contains_key("x-nsite-addr"));
     assert_eq!(headers["content-security-policy"], crate::site_csp::GATEWAY_CSP);
