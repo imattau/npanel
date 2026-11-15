@@ -38,15 +38,17 @@ pub struct Host {
     pub created_by: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// This site is selected by its Nsite address through NCC, with no DNS hostname.
+    pub ncc_only: bool,
 }
 
 pub const HOST_COLUMNS: &str = "hosts.id, hosts.hostname, hosts.pubkey, hosts.kind, hosts.identifier, \
     hosts.pinned_event_id, hosts.enabled, hosts.hidden, hosts.redirect_www, hosts.spa, hosts.csp, hosts.seo, \
-    hosts.merge_deployments, hosts.analytics, hosts.analytics_script, hosts.link_previews, hosts.errors, hosts.created_by, hosts.created_at, hosts.updated_at";
+    hosts.merge_deployments, hosts.analytics, hosts.analytics_script, hosts.link_previews, hosts.errors, hosts.created_by, hosts.created_at, hosts.updated_at, hosts.ncc_only";
 
 /// How many columns [`HOST_COLUMNS`] selects, for a query that selects more
 /// after them.
-pub const HOST_COLUMN_COUNT: usize = 20;
+pub const HOST_COLUMN_COUNT: usize = 21;
 
 impl Host {
     pub fn from_row(row: &Row) -> rusqlite::Result<Host> {
@@ -71,6 +73,7 @@ impl Host {
             created_by: row.get(17)?,
             created_at: row.get(18)?,
             updated_at: row.get(19)?,
+            ncc_only: row.get(20)?,
         })
     }
 

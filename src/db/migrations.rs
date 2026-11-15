@@ -392,4 +392,10 @@ pub const MIGRATIONS: &[(&str, &[&str])] = &[
             r#"DELETE FROM settings WHERE key = 'link_preview_crawler_pattern' AND value = json_quote('googlebot|bingbot|yandex|baiduspider|duckduckbot|applebot|twitterbot|discordbot|facebookexternalhit|facebookcatalog|meta-externalagent|linkedinbot|slackbot|slack-imgproxy|telegrambot|whatsapp|embedly|iframely|quora link preview|showyoubot|outbrain|pinterest|vkshare|redditbot|skypeuripreview|mastodon|pleroma|akkoma|misskey|rocket\.chat|cardyb|w3c_validator|rogerbot')"#,
         ],
     ),
+    (
+        "029_hosts_ncc_only",
+        &[
+            r#"ALTER TABLE hosts ADD COLUMN ncc_only INTEGER NOT NULL DEFAULT 0"#,
+        ],
+    ),
 ];

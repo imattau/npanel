@@ -5,7 +5,7 @@ import { DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { useCreateHost } from '@/hooks/useNpanel';
+import { useCreateHost, useInstance } from '@/hooks/useNpanel';
 import { useParsedAddress } from '@/hooks/useParsedAddress';
 import { useToast } from '@/hooks/useToast';
 import { isRootDomain } from '@shared/hostname';
@@ -15,6 +15,7 @@ export interface AddHostDraft {
   address: string;
   hidden: boolean;
   redirectWww: boolean;
+  nccOnly: boolean;
 }
 
 interface AddHostFormProps {
@@ -26,21 +27,32 @@ interface AddHostFormProps {
 
 /** The body of the Add Site dialog. */
 export function AddHostForm({ draft, onChange, onAdded, onCancel }: AddHostFormProps) {
-  const { hostname, address, hidden, redirectWww } = draft;
+  const { hostname, address, hidden, redirectWww, nccOnly } = draft;
   const set = (change: Partial<AddHostDraft>) => onChange({ ...draft, ...change });
 
   const parsed = useParsedAddress(address);
   const createHost = useCreateHost();
+  const instance = useInstance();
   const { toast } = useToast();
 
   const domain = hostname.trim().toLowerCase();
+  const nccAvailable = !!instance.data?.ncc_npub;
   // Only a root domain owns its `www`, so that is the only place the offer means anything.
-  const www = isRootDomain(domain);
+  const www = !nccOnly && isRootDomain(domain);
 
   const submit = async () => {
     try {
-      await createHost.mutateAsync({ hostname, address, hidden, redirect_www: redirectWww });
-      toast({ title: `${domain} added` });
+      const result = await createHost.mutateAsync({
+        hostname: nccOnly ? '' : hostname,
+        address,
+        hidden,
+        ncc_only: nccOnly,
+        redirect_www: !nccOnly && redirectWww,
+      });
+      toast({
+        title: nccOnly ? 'NCC-only site added' : `${domain} added`,
+        description: nccOnly ? result.host.ncc_url ?? undefined : undefined,
+      });
       onAdded();
     } catch (error) {
       toast({
@@ -59,18 +71,36 @@ export function AddHostForm({ draft, onChange, onAdded, onCancel }: AddHostFormP
         void submit();
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="hostname">Domain</Label>
-        <Input
-          id="hostname"
-          value={hostname}
-          onChange={(event) => set({ hostname: event.target.value })}
-          placeholder="docs.example.com"
-          autoComplete="off"
-          spellCheck={false}
+      <label htmlFor="ncc-only" className="flex items-center justify-between gap-4 text-sm">
+        <span>
+          <span className="block font-medium">NCC only (no domain)</span>
+          <span className="block text-muted-foreground">Open this nsite through NCC Browser.</span>
+        </span>
+        <Switch
+          id="ncc-only"
+          checked={nccOnly}
+          disabled={!nccAvailable}
+          onCheckedChange={(nccOnly) => set({ nccOnly })}
         />
-        <DnsRecords hostname={hostname} www={www && redirectWww} />
-      </div>
+      </label>
+      {!nccAvailable && (
+        <p className="text-xs text-muted-foreground">This Npanel has no NCC service identity configured.</p>
+      )}
+
+      {!nccOnly && (
+        <div className="space-y-2">
+          <Label htmlFor="hostname">Domain</Label>
+          <Input
+            id="hostname"
+            value={hostname}
+            onChange={(event) => set({ hostname: event.target.value })}
+            placeholder="docs.example.com"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <DnsRecords hostname={hostname} www={www && redirectWww} />
+        </div>
+      )}
 
       <AddressInput value={address} onChange={(address) => set({ address })} parsed={parsed} />
 
@@ -95,7 +125,7 @@ export function AddHostForm({ draft, onChange, onAdded, onCancel }: AddHostFormP
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!domain || !parsed.address || createHost.isPending}>
+        <Button type="submit" disabled={(!nccOnly && !domain) || !parsed.address || !nccAvailable && nccOnly || createHost.isPending}>
           {createHost.isPending ? 'Adding…' : 'Add Site'}
         </Button>
       </DialogFooter>

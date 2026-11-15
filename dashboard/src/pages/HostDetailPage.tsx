@@ -51,7 +51,7 @@ export function HostDetailPage() {
   const syncHost = useSyncHost();
   const { toast } = useToast();
 
-  useSeoMeta({ title: host.data ? `${host.data.hostname} — npanel` : 'npanel' });
+  useSeoMeta({ title: host.data ? `${host.data.ncc_only ? host.data.ncc_url ?? host.data.address : host.data.hostname} — npanel` : 'npanel' });
 
   if (host.isLoading) {
     return (
@@ -74,6 +74,8 @@ export function HostDetailPage() {
   }
 
   const data = host.data;
+  const visitUrl = data.ncc_only ? data.ncc_url : `https://${data.hostname}`;
+  const displayName = data.ncc_only ? data.ncc_url ?? data.address : data.hostname;
 
   const sync = async () => {
     try {
@@ -96,10 +98,10 @@ export function HostDetailPage() {
         back={BACK}
         banner={preview.image && <Banner src={preview.image} />}
         icon={<SiteIcon hostname={data.hostname} src={preview.icon} className="size-14" />}
-        title={<span title={preview.title ?? undefined}>{preview.title ?? data.hostname}</span>}
+        title={<span title={preview.title ?? undefined}>{preview.title ?? displayName}</span>}
         subtitle={
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            {preview.title && <span className="w-full truncate text-foreground/80">{data.hostname}</span>}
+            {preview.title && <span className="w-full truncate text-foreground/80">{displayName}</span>}
             <SiteStatus host={data} />
             <span aria-hidden>·</span>
             <PubkeyLabel pubkey={data.pubkey} compact />
@@ -124,12 +126,14 @@ export function HostDetailPage() {
             >
               <RefreshCw className={cn(syncHost.isPending && 'animate-spin')} aria-hidden />
             </Button>
-            <Button asChild className="rounded-full">
-              <a href={`https://${data.hostname}`} target="_blank" rel="noreferrer noopener">
-                Visit
-                <ArrowUpRight aria-hidden />
-              </a>
-            </Button>
+            {visitUrl && (
+              <Button asChild className="rounded-full">
+                <a href={visitUrl} target="_blank" rel="noreferrer noopener">
+                  Visit
+                  <ArrowUpRight aria-hidden />
+                </a>
+              </Button>
+            )}
           </>
         }
       />
@@ -147,7 +151,7 @@ export function HostDetailPage() {
 
       <SiteMenu host={data} admin={me.data?.role === 'admin'} />
 
-      <DeleteSite hostname={data.hostname} />
+      <DeleteSite hostname={data.hostname} label={displayName} />
     </div>
   );
 }
@@ -268,7 +272,7 @@ function SiteMenu({ host, admin }: { host: Host; admin: boolean }) {
       {SITE_SECTIONS.map((group) => (
         <Section key={group[0].id}>
           {group
-            .filter((section) => admin || !section.adminOnly)
+            .filter((section) => (admin || !section.adminOnly) && !(host.ncc_only && ['seo', 'nip05'].includes(section.id)))
             .map((section) => (
               <LinkRow
                 key={section.id}
@@ -312,7 +316,7 @@ function summary(id: SiteSectionId, host: Host): string | undefined {
   }
 }
 
-function DeleteSite({ hostname }: { hostname: string }) {
+function DeleteSite({ hostname, label }: { hostname: string; label: string }) {
   const deleteHost = useDeleteHost();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -320,7 +324,7 @@ function DeleteSite({ hostname }: { hostname: string }) {
   const remove = async () => {
     try {
       await deleteHost.mutateAsync(hostname);
-      toast({ title: `${hostname} deleted` });
+      toast({ title: `${label} deleted` });
       navigate('/');
     } catch (error) {
       toast({
@@ -343,7 +347,7 @@ function DeleteSite({ hostname }: { hostname: string }) {
       </AlertDialogTrigger>
       <AlertDialogContent size="sm">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete {hostname}?</AlertDialogTitle>
+          <AlertDialogTitle>Delete {label}?</AlertDialogTitle>
           <AlertDialogDescription>
             It stops being served right away. Its files stay on disk until they're pruned.
           </AlertDialogDescription>

@@ -274,7 +274,7 @@ export function useCreateHost() {
   const invalidate = useInvalidate();
 
   return useMutation({
-    mutationFn: (input: { hostname: string; address: string; hidden?: boolean; redirect_www?: boolean }) =>
+    mutationFn: (input: { hostname: string; address: string; hidden?: boolean; redirect_www?: boolean; ncc_only?: boolean }) =>
       api!.createHost(input),
     onSuccess: invalidate,
   });

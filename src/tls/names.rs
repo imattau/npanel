@@ -19,7 +19,7 @@ use crate::hostname::www_apex;
 /// certificate, since it is an HTTPS response like any other.
 pub fn qualifies(conn: &Connection, domain: &str) -> rusqlite::Result<bool> {
     let configured: Option<i64> = conn
-        .prepare_cached("SELECT id FROM hosts WHERE hostname = ?1 AND enabled = 1 UNION ALL SELECT id FROM tunnels WHERE hostname = ?1 AND enabled = 1")?
+        .prepare_cached("SELECT id FROM hosts WHERE hostname = ?1 AND enabled = 1 AND ncc_only = 0 UNION ALL SELECT id FROM tunnels WHERE hostname = ?1 AND enabled = 1")?
         .query_row([domain], |r| r.get(0))
         .optional()?;
     if configured.is_some() {
@@ -29,7 +29,7 @@ pub fn qualifies(conn: &Connection, domain: &str) -> rusqlite::Result<bool> {
         return Ok(false);
     };
     let redirects: Option<i64> = conn
-        .prepare_cached("SELECT id FROM hosts WHERE hostname = ? AND enabled = 1 AND redirect_www = 1")?
+        .prepare_cached("SELECT id FROM hosts WHERE hostname = ? AND enabled = 1 AND ncc_only = 0 AND redirect_www = 1")?
         .query_row([apex], |r| r.get(0))
         .optional()?;
     Ok(redirects.is_some())
@@ -39,7 +39,7 @@ pub fn qualifies(conn: &Connection, domain: &str) -> rusqlite::Result<bool> {
 pub fn all(conn: &Connection) -> rusqlite::Result<BTreeSet<String>> {
     // A tunnel's hostname is its only one: nothing redirects to it.
     let hosts = conn
-        .prepare_cached("SELECT hostname, redirect_www FROM hosts WHERE enabled = 1 UNION ALL SELECT hostname, 0 FROM tunnels WHERE enabled = 1")?
+        .prepare_cached("SELECT hostname, redirect_www FROM hosts WHERE enabled = 1 AND ncc_only = 0 UNION ALL SELECT hostname, 0 FROM tunnels WHERE enabled = 1")?
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(hosts.into_iter().flat_map(|(hostname, redirect_www)| of_host(&hostname, true, redirect_www)).collect())

@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useSparklines } from '@/hooks/useAnalytics';
 import { useErrorsSummary } from '@/hooks/useErrors';
 import { useHosts } from '@/hooks/useNpanel';
-import type { Host, Sparkline as SparklineData } from '@/lib/api-types';
+import type { Host, PublicSite, Sparkline as SparklineData } from '@/lib/api-types';
 import { compactNumber } from '@/lib/format';
 import { siteStatus } from '@/lib/site-status';
 import { cn } from '@/lib/utils';
@@ -34,7 +34,9 @@ export function HostsPage() {
   const mine = hosts.data?.hosts ?? [];
   const others = hosts.data?.other_sites ?? [];
   const needle = search.trim().toLowerCase();
-  const shown = needle ? mine.filter((host) => host.hostname.includes(needle)) : mine;
+  const shown = needle
+    ? mine.filter((host) => `${host.ncc_only ? '' : host.hostname} ${host.ncc_url ?? ''} ${host.address}`.toLowerCase().includes(needle))
+    : mine;
 
   return (
     <div className="space-y-6">
@@ -83,7 +85,7 @@ export function HostsPage() {
         </Grid>
       )}
 
-      {others.length > 0 && <OtherSites hostnames={others.map((site) => site.hostname)} />}
+      {others.length > 0 && <OtherSites sites={others} />}
     </div>
   );
 }
@@ -117,8 +119,10 @@ function SiteCard({
         <div className="flex items-center gap-3">
           <SiteIcon hostname={host.hostname} src={preview.icon} className="size-9" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{preview.title ?? host.hostname}</p>
-            {preview.title && <p className="truncate text-xs text-muted-foreground">{host.hostname}</p>}
+            <p className="truncate font-semibold">{preview.title ?? (host.ncc_only ? host.address : host.hostname)}</p>
+            {(preview.title || host.ncc_only) && (
+              <p className="truncate text-xs text-muted-foreground">{host.ncc_only ? host.ncc_url ?? host.address : host.hostname}</p>
+            )}
           </div>
           {unresolved > 0 && (
             <span
@@ -191,7 +195,7 @@ function Empty() {
       </span>
       <div className="space-y-1">
         <p className="text-lg font-semibold">No sites yet</p>
-        <p className="max-w-xs text-sm text-muted-foreground">Add a domain and the nsite it should serve.</p>
+        <p className="max-w-xs text-sm text-muted-foreground">Add an nsite to serve from a domain or through NCC Browser.</p>
       </div>
       <AddHostDialog />
     </div>
@@ -202,21 +206,21 @@ function Empty() {
  * What else this gateway serves: names only, so staff can see a domain is
  * taken without asking. Managing one takes a grant from an admin.
  */
-function OtherSites({ hostnames }: { hostnames: string[] }) {
+function OtherSites({ sites }: { sites: PublicSite[] }) {
   return (
     <section className="space-y-3 pt-6">
       <h2 className="px-1 text-[13px] font-semibold text-foreground/80">Also on this gateway</h2>
       <ul className="flex flex-wrap gap-2">
-        {hostnames.map((hostname) => (
-          <li key={hostname}>
+        {sites.map((site) => (
+          <li key={site.hostname}>
             <a
-              href={`https://${hostname}`}
+              href={site.ncc_only ? site.ncc_url ?? undefined : `https://${site.hostname}`}
               target="_blank"
               rel="noreferrer noopener"
               className="inline-flex items-center gap-2 rounded-full bg-card py-1 pr-3 pl-1 text-sm surface hover:text-primary"
             >
-              <SiteIcon hostname={hostname} className="size-5" />
-              {hostname}
+              <SiteIcon hostname={site.hostname} className="size-5" />
+              {site.ncc_only ? site.ncc_url ?? site.hostname : site.hostname}
             </a>
           </li>
         ))}

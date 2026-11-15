@@ -41,11 +41,11 @@ function usePatch(hostname: string) {
   };
 }
 
-/** Which nsite the domain serves, and where else it can be reached. */
+/** Which nsite is served, and the addresses visitors can use to reach it. */
 export function NsiteSettings({ host }: { host: Host }) {
   return (
     <div className="space-y-8">
-      <Section footer="The site this domain serves, and who publishes it.">
+      <Section footer={host.ncc_only ? 'This nsite is registered for access through NCC Browser.' : 'The site this domain serves, and who publishes it.'}>
         <Row
           label={<PubkeyLabel pubkey={host.pubkey} />}
           description={<span className="block truncate font-mono">{host.address}</span>}
@@ -56,6 +56,19 @@ export function NsiteSettings({ host }: { host: Host }) {
           </div>
         </Row>
       </Section>
+
+      {host.ncc_url && (
+        <Section title={host.ncc_only ? 'NCC address' : 'Also available through NCC'}>
+          <Row label={<span className="block truncate font-mono">{host.ncc_url}</span>}>
+            <div className="flex items-center gap-1">
+              <CopyButton value={host.ncc_url} label="Copy the NCC address" />
+              <Button asChild variant="outline" size="sm">
+                <a href={host.ncc_url} target="_blank" rel="noreferrer noopener">Open</a>
+              </Button>
+            </div>
+          </Row>
+        </Section>
+      )}
 
       {!!host.certificates?.length && (
         <Section title="HTTPS" footer="npanel gets this site's certificates itself, and renews them before they expire.">
@@ -113,7 +126,7 @@ export function ServingSettings({ host }: { host: Host }) {
 
       {/* Only a root domain owns its `www`; on a subdomain the switch would be a
           promise npanel has no business making about someone's zone. */}
-      {isRootDomain(host.hostname) && (
+      {!host.ncc_only && isRootDomain(host.hostname) && (
         <Section footer={host.redirect_www ? 'www needs these records to reach this server.' : undefined}>
           <ToggleRow
             id="www"

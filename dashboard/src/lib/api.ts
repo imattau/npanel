@@ -127,6 +127,7 @@ export class ApiClient {
     address: string;
     hidden?: boolean;
     redirect_www?: boolean;
+    ncc_only?: boolean;
   }): Promise<{ host: Host }> {
     return this.request('POST', '/api/hosts', input);
   }

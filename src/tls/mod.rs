@@ -238,6 +238,9 @@ impl TlsService {
     /// The certificates a host's names have, or are waiting for: its own,
     /// and its `www` if that is redirected.
     pub fn host_certificates(&self, conn: &Connection, host: &Host) -> rusqlite::Result<Vec<CertificateStatus>> {
+        if host.ncc_only {
+            return Ok(Vec::new());
+        }
         self.certificates(conn, names::of_host(&host.hostname, host.enabled, host.redirect_www))
     }
 

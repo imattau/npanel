@@ -79,7 +79,7 @@ Unauthenticated, for the logged-out homepage, which introduces npanel to
 whoever landed on it and names the person running this copy.
 
 ```json
-{ "contact_npub": "npub1...", "dashboard_host": "panel.example.com", "version": "0.2.0" }
+{ "contact_npub": "npub1...", "dashboard_host": "panel.example.com", "ncc_npub": "npub1...", "version": "0.2.0" }
 ```
 
 `contact_npub` is `null` when no admin has set
@@ -88,6 +88,8 @@ npub is published to be shown, and the hostname is the one the caller used to
 reach this route. `version` is the server's, so a dashboard served from
 somewhere else can tell it is newer than the API it is talking to; servers
 before 0.2.0 leave it out.
+`ncc_npub` is the NCC service identity, or `null` when NCC resolution is not
+configured.
 
 ### `GET /api/sites`
 
@@ -99,6 +101,8 @@ logged-out homepage.
   "sites": [
     {
       "hostname": "example.org",
+      "ncc_only": false,
+      "ncc_url": "ncc://npub1.../npanel/nsite/naddr1...",
       "title": "The Docs",
       "description": "Everything about the thing.",
       "image": "https://example.org/cover.png",
@@ -111,7 +115,10 @@ logged-out homepage.
 `sites` is empty unless an admin turned
 [`public_site_list`](configuration.md#public_site_list) on, and never includes a
 host that is disabled or marked `hidden`. Nothing here says which nsite a site
-points at, or who runs it.
+points at, or who runs it. `ncc_only` and `ncc_url` identify a site reachable
+through NCC Browser; for those entries, `hostname` is an internal API key and
+must not be presented as a public address. `ncc_url` is null when the gateway
+has no configured NCC identity.
 
 `title`, `description`, and `image` are the site's own Open Graph, Twitter, or
 `<title>` metadata, read from the copy of its `index.html` npanel already
@@ -243,7 +250,10 @@ or after either fails. A failed build says why in the version's deploy log.
 { "hosts": [...], "other_sites": [{ "hostname": "example.org" }] }
 ```
 
-`hosts` is ordered by hostname; staff see only the hosts granted to them. Each
+`hosts` is ordered by hostname; staff see only the hosts granted to them. An
+NCC-only host has `ncc_only: true`; its `hostname` is an internal API key and
+should not be shown as a public address. When the instance has an NCC identity,
+`ncc_url` contains the browser URL for the site. Each
 host carries a `preview` — `title`, `description`, `image` and `icon`, exactly
 as [`/api/sites`](#get-apisites) describes them — whether or not it is listed.
 `other_sites` names what else the gateway serves, on exactly the terms
@@ -259,6 +269,12 @@ empty for an admin, whose `hosts` already holds everything.
 `address` accepts an npub, nprofile, naddr, an `a` tag
 (`35128:<pubkey>:<identifier>`), a NIP-5A label, or a URL containing one of
 those. It's stored decomposed into pubkey, kind, and identifier.
+
+To serve a site through NCC Browser without assigning a DNS name, send
+`{ "hostname": "", "address": "npub1...", "ncc_only": true }`. This
+requires an NCC service identity configured on the instance. Npanel assigns an
+internal hostname; use the returned `ncc_url` to open the site. NCC-only sites
+do not receive web certificates or domain SEO/NIP-05 features.
 
 `201` with `{ "host": {...} }`. `409` if the hostname is already configured or
 is `dashboard_host`. `400` if it doesn't sit under one of

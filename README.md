@@ -5,13 +5,17 @@ A self-hostable gateway for
 (the nsite protocol), with a team dashboard.
 
 Point your domains' A/AAAA records at one box, then map domains to nsites from
-a web UI that works like a DNS editor. npanel downloads each site's files from
-Blossom servers, stores them locally, and serves them — so a site stays up even
-when the relays and Blossom servers it came from are down.
+a web UI that works like a DNS editor. Or serve an nsite through the gateway's
+NCC identity without assigning it a domain. npanel downloads each site's files
+from Blossom servers, stores them locally, and serves them — so a site stays up
+even when the relays and Blossom servers it came from are down.
 
 - **Permissioned.** Only people you add can log in. Staff see only the sites
   they've been granted; admins see everything.
 - **Nostr-native login.** NIP-98 HTTP auth with a browser extension. No passwords.
+- **NCC sites.** When an NCC service identity is configured, sites can be
+  published directly at `ncc://` addresses for NCC Browser, without DNS or a
+  separate hostname.
 - **Versioned.** Every site event is kept as a version you can inspect, pin, or
   roll back to, with a per-version deploy log that explains failures.
 - **Auditable.** Every change to a site, user, or setting is recorded.

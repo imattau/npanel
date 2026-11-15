@@ -30,6 +30,10 @@ export interface SiteStorage {
 export interface Host {
   /** The API's identifier for a host: unique, and what every route keys on. */
   hostname: string;
+  /** True when the hostname is an internal key and the site is reached only through NCC. */
+  ncc_only?: boolean;
+  /** Address through this gateway's NCC service, when its NCC identity is configured. */
+  ncc_url?: string | null;
   pubkey: string;
   kind: number;
   identifier: string;
@@ -260,6 +264,8 @@ export interface TlsStatus {
 /** A site as it appears to someone who can't manage it. */
 export interface PublicSite {
   hostname: string;
+  ncc_only?: boolean;
+  ncc_url?: string | null;
 }
 
 /** What a site's own build says about it: its landing page's metadata, and its icon. */
@@ -280,6 +286,8 @@ export interface Instance {
   /** Whoever runs this instance, or null when no admin has said. */
   contact_npub: string | null;
   dashboard_host: string;
+  /** The public NCC service identity, when configured. */
+  ncc_npub?: string | null;
   /** The server's version. Missing from servers before 0.2.0. */
   version?: string;
 }

@@ -173,9 +173,12 @@ function ServedSites() {
 
 /** One site as a link preview, from the metadata and icon of its own landing page. */
 function SiteCardLink({ site }: { site: SiteCard }) {
+  const href = site.ncc_only ? site.ncc_url ?? '#' : `https://${site.hostname}`;
+  const label = site.ncc_only ? site.ncc_url ?? 'NCC Browser' : site.hostname;
+
   return (
     <a
-      href={`https://${site.hostname}`}
+      href={href}
       target="_blank"
       rel="noreferrer noopener"
       className="group flex h-full flex-col overflow-hidden rounded-2xl bg-card surface transition-shadow hover:surface-lift focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:outline-hidden"
@@ -186,9 +189,9 @@ function SiteCardLink({ site }: { site: SiteCard }) {
         <div className="flex items-center gap-3">
           <SiteIcon hostname={site.hostname} src={site.icon} className="size-9" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{site.title ?? site.hostname}</p>
+            <p className="truncate font-semibold">{site.title ?? (site.ncc_only ? 'Nsite' : site.hostname)}</p>
             <p className="flex items-center gap-1 text-xs text-primary">
-              <span className="truncate">{site.hostname}</span>
+              <span className="truncate">{label}</span>
               <ArrowUpRight className="size-3 shrink-0" aria-hidden />
             </p>
           </div>

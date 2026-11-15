@@ -23,6 +23,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 use crate::analytics::query::engine::QueryHost;
 use crate::analytics::{Analytics, Answer};
@@ -356,8 +357,14 @@ async fn instance(State(deps): State<Deps>) -> ApiResult {
     ok(json!({
         "contact_npub": if contact.is_empty() { Value::Null } else { Value::String(contact) },
         "dashboard_host": deps.dashboard_host,
+        "ncc_npub": deps.ncc_pubkey.as_deref().map(nip19::npub_encode),
         "version": env!("CARGO_PKG_VERSION"),
     }))
+}
+
+/// The browser address for an nsite served through this gateway's NCC service.
+fn ncc_site_url(ncc_pubkey: &str, naddr: &str) -> String {
+    format!("ncc://{}/npanel/nsite/{naddr}", nip19::npub_encode(ncc_pubkey))
 }
 
 /// The sites this gateway serves, for the logged-out homepage. Empty unless
@@ -366,12 +373,16 @@ async fn sites(State(deps): State<Deps>) -> ApiResult {
     #[derive(serde::Serialize)]
     struct Card {
         hostname: String,
+        ncc_only: bool,
+        ncc_url: Option<String>,
         #[serde(flatten)]
         preview: SitePreview,
     }
 
     let public = deps.settings.get().public_site_list;
     let previews = deps.previews.clone();
+    let ncc_pubkey = deps.ncc_pubkey.clone();
+    let fallback_relays = deps.settings.get().relays.clone();
     let cards = deps
         .db
         .call(move |conn| {
@@ -379,7 +390,15 @@ async fn sites(State(deps): State<Deps>) -> ApiResult {
             for host in listed_hosts(conn, public)? {
                 let build = current_build(conn, host.id, BuildKind::Clearnet)?;
                 let preview = previews.preview(conn, &host, build.as_ref())?;
-                cards.push(Card { hostname: host.hostname, preview });
+                let ncc_url = ncc_pubkey.as_deref().map(|pubkey| {
+                    let address = host.address();
+                    let relays = build.as_ref().map_or_else(
+                        || naddr_relays(&[], &fallback_relays),
+                        |build| naddr_relays(&build.relays, &fallback_relays),
+                    );
+                    ncc_site_url(pubkey, &encode_naddr(&address, &relays))
+                });
+                cards.push(Card { hostname: host.hostname, ncc_only: host.ncc_only, ncc_url, preview });
             }
             Ok(cards)
         })
@@ -513,18 +532,22 @@ async fn host_json(deps: &Deps, host: &Host, details: HostDetails) -> anyhow::Re
     };
 
     let address = host.address();
+    let naddr = encode_naddr(&address, &match &details.build {
+        Some(build) => naddr_relays(&build.relays, &deps.settings.get().relays),
+        None => naddr_relays(&[], &deps.settings.get().relays),
+    });
+    let ncc_url = deps.ncc_pubkey.as_deref().map(|pubkey| ncc_site_url(pubkey, &naddr));
     Ok(json!({
         "hostname": host.hostname,
         "pubkey": host.pubkey,
         "kind": host.kind,
         "identifier": host.identifier,
         "address": format_nsite_address(&address),
+        "ncc_only": host.ncc_only,
+        "ncc_url": ncc_url,
         // The one `Nsite-Location` names, or, before there's a build to
         // name one, with the gateway's relays.
-        "naddr": encode_naddr(&address, &match &details.build {
-            Some(build) => build.relays.clone(),
-            None => naddr_relays(&[], &deps.settings.get().relays),
-        }),
+        "naddr": naddr,
         "enabled": host.enabled,
         "hidden": host.hidden,
         "redirect_www": host.redirect_www,
@@ -566,6 +589,7 @@ fn host_summary(host: &Host) -> Map<String, Value> {
         ("pubkey", json!(host.pubkey)),
         ("kind", json!(host.kind)),
         ("identifier", json!(host.identifier)),
+        ("ncc_only", json!(i64::from(host.ncc_only))),
         ("enabled", json!(i64::from(host.enabled))),
         ("hidden", json!(i64::from(host.hidden))),
         ("redirect_www", json!(i64::from(host.redirect_www))),
@@ -603,11 +627,11 @@ async fn list_hosts(State(deps): State<Deps>, user: AuthUser) -> ApiResult {
             };
             // Staff are told what else this gateway serves on the same terms as
             // the public. Admins have every host already.
-            let others: Vec<String> = if u.is_admin() {
+            let others: Vec<Host> = if u.is_admin() {
                 Vec::new()
             } else {
                 let mine: std::collections::HashSet<&str> = hosts.iter().map(|h| h.hostname.as_str()).collect();
-                listed_hosts(conn, public)?.into_iter().map(|h| h.hostname).filter(|h| !mine.contains(h.as_str())).collect()
+                listed_hosts(conn, public)?.into_iter().filter(|h| !mine.contains(h.hostname.as_str())).collect()
             };
             // Every host's details in this one trip to the database, rather
             // than a trip per host.
@@ -626,7 +650,15 @@ async fn list_hosts(State(deps): State<Deps>, user: AuthUser) -> ApiResult {
     for (host, details) in hosts {
         list.push(host_json(&deps, &host, details).await?);
     }
-    ok(json!({ "hosts": list, "other_sites": others.into_iter().map(|h| json!({ "hostname": h })).collect::<Vec<_>>() }))
+    let fallback_relays = deps.settings.get().relays.clone();
+    let other_sites = others.into_iter().map(|host| {
+        let ncc_url = deps.ncc_pubkey.as_deref().map(|pubkey| {
+            let naddr = encode_naddr(&host.address(), &naddr_relays(&[], &fallback_relays));
+            ncc_site_url(pubkey, &naddr)
+        });
+        json!({ "hostname": host.hostname, "ncc_only": host.ncc_only, "ncc_url": ncc_url })
+    }).collect::<Vec<_>>();
+    ok(json!({ "hosts": list, "other_sites": other_sites }))
 }
 
 /// `null` and absent are different answers for `pinned_event_id`: one
@@ -678,13 +710,23 @@ async fn create_host(State(deps): State<Deps>, user: AuthUser, Extension(body): 
     struct NewHost {
         hostname: String,
         address: String,
+        #[serde(default)]
+        ncc_only: bool,
         #[serde(flatten)]
         flags: Flags,
     }
-    let NewHost { hostname, address, flags } = body.json("Expected a JSON body with hostname and address.")?;
+    let NewHost { hostname, address, ncc_only, flags } = body.json("Expected a site address and either a domain or NCC-only mode.")?;
 
-    let hostname = parse_hostname(&hostname, &deps.settings.get().allowed_host_suffixes).map_err(bad)?;
     let address = parse_nsite_address(&address).map_err(bad)?;
+    let hostname = if ncc_only {
+        if deps.ncc_pubkey.is_none() {
+            return Err(bad("This Npanel has no NCC service identity configured."));
+        }
+        let digest = Sha256::digest(site_key(&address).as_bytes());
+        format!("ncc-{}.ncc.invalid", hex::encode(digest))
+    } else {
+        parse_hostname(&hostname, &deps.settings.get().allowed_host_suffixes).map_err(bad)?
+    };
     if hostname == deps.dashboard_host {
         return Err(ApiError::Conflict("That domain serves the dashboard itself.".into()));
     }
@@ -692,10 +734,10 @@ async fn create_host(State(deps): State<Deps>, user: AuthUser, Extension(body): 
     // Off unless asked for, or on unless asked otherwise, flag by flag. A new
     // host is always enabled.
     let hidden = flags.hidden.unwrap_or(false);
-    let redirect_www = flags.redirect_www.unwrap_or(true);
+    let redirect_www = !ncc_only && flags.redirect_www.unwrap_or(true);
     let spa = flags.spa.unwrap_or(false);
     let csp = flags.csp.unwrap_or(true);
-    let seo = flags.seo.unwrap_or(true);
+    let seo = !ncc_only && flags.seo.unwrap_or(true);
     let merge = flags.merge_deployments.unwrap_or(false);
     let analytics = flags.analytics.unwrap_or(false);
     let analytics_script = flags.analytics_script.unwrap_or(true);
@@ -710,9 +752,9 @@ async fn create_host(State(deps): State<Deps>, user: AuthUser, Extension(body): 
             let tx = conn.transaction()?;
             let inserted = tx.execute(
                 "INSERT INTO hosts (hostname, pubkey, kind, identifier, pinned_event_id, enabled, hidden, redirect_www, spa, csp, seo,
-                   merge_deployments, analytics, analytics_script, link_previews, errors, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                params![name, addr.pubkey, addr.kind, addr.identifier, hidden, redirect_www, spa, csp, seo, merge, analytics, analytics_script, link_previews, errors, u.pubkey, now, now],
+                   merge_deployments, analytics, analytics_script, link_previews, errors, created_by, created_at, updated_at, ncc_only)
+                 VALUES (?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![name, addr.pubkey, addr.kind, addr.identifier, hidden, redirect_www, spa, csp, seo, merge, analytics, analytics_script, link_previews, errors, u.pubkey, now, now, ncc_only],
             );
             match inserted {
                 Err(error) if is_unique_violation(&error) => return Ok(None),
@@ -730,10 +772,10 @@ async fn create_host(State(deps): State<Deps>, user: AuthUser, Extension(body): 
         })
         .await?;
     let Some(host) = created else {
-        return Err(ApiError::Conflict(format!("{hostname} is already configured.")));
+        return Err(ApiError::Conflict(if ncc_only { "That nsite is already configured.".into() } else { format!("{hostname} is already configured.") }));
     };
 
-    deps.log.info("host_created", fields! { "hostname" => hostname.as_str(), "pubkey" => address.pubkey.as_str(), "actor" => user.pubkey.as_str() });
+    deps.log.info("host_created", fields! { "hostname" => hostname.as_str(), "pubkey" => address.pubkey.as_str(), "actor" => user.pubkey.as_str(), "ncc_only" => ncc_only });
 
     // Before the response, so the row staff were just told about is served.
     deps.serve_cache.clear();

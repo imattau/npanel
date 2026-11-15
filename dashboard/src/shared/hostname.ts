@@ -88,6 +88,9 @@ export function parseHostname(input: string, allowedSuffixes: string[]): string 
     // instead of being read as an ordinary domain under an unusual TLD.
     throw new Error("npanel gives each site its own .onion address. Add the site's regular domain instead.");
   }
+  if (hostname.endsWith(".ncc.invalid")) {
+    throw new Error("The .ncc.invalid suffix is reserved for NCC-only sites.");
+  }
   if (allowedSuffixes.length && !allowedSuffixes.some((suffix) => matchesSuffix(hostname, suffix))) {
     throw new Error(
       `${hostname} is outside the domains this gateway serves (${allowedSuffixes.join(", ")}). An admin can change that under Settings.`,

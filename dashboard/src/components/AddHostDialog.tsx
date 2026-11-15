@@ -17,9 +17,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 // on the page it sits on, so it is fetched only when someone goes to add a site.
 const AddHostForm = lazy(() => import('@/components/AddHostForm'));
 
-const EMPTY_DRAFT: AddHostDraft = { hostname: '', address: '', hidden: false, redirectWww: true };
+const EMPTY_DRAFT: AddHostDraft = { hostname: '', address: '', hidden: false, redirectWww: true, nccOnly: false };
 
-/** Map a domain to an nsite. */
+/** Serve an nsite from a domain or through this gateway's NCC identity. */
 export function AddHostDialog() {
   const [open, setOpen] = useState(false);
   // Held here rather than in the form, so a draft survives the dialog closing.
@@ -37,7 +37,7 @@ export function AddHostDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Site</DialogTitle>
-          <DialogDescription>Serve an nsite from a domain you control.</DialogDescription>
+          <DialogDescription>Serve an nsite from a domain or through NCC Browser.</DialogDescription>
         </DialogHeader>
 
         <Suspense

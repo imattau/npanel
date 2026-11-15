@@ -101,6 +101,9 @@ pub fn parse_hostname(input: &str, allowed_suffixes: &[String]) -> Result<String
         // this sentence too.
         return Err("npanel gives each site its own .onion address. Add the site's regular domain instead.".into());
     }
+    if hostname.ends_with(".ncc.invalid") {
+        return Err("The .ncc.invalid suffix is reserved for NCC-only sites.".into());
+    }
     if !allowed_suffixes.is_empty() && !allowed_suffixes.iter().any(|suffix| matches_suffix(&hostname, suffix)) {
         return Err(format!(
             "{hostname} is outside the domains this gateway serves ({}). An admin can change that under Settings.",

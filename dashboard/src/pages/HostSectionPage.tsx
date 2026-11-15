@@ -22,7 +22,7 @@ export function HostSectionPage() {
   const me = useMe();
   const section = findSiteSection(params.section);
 
-  const name = host.data?.preview.title ?? params.hostname ?? '';
+  const name = host.data?.preview.title ?? (host.data?.ncc_only ? host.data.ncc_url ?? host.data.address : params.hostname) ?? '';
   useSeoMeta({ title: section ? `${section.label} — ${name} — npanel` : 'npanel' });
 
   if (!section || (section.adminOnly && me.data?.role !== 'admin')) return <NotFound />;
@@ -41,6 +41,8 @@ export function HostSectionPage() {
       </div>
     );
   }
+
+  if (host.data.ncc_only && section && (section.id === 'seo' || section.id === 'nip05')) return <NotFound />;
 
   return (
     <div className="space-y-8">
