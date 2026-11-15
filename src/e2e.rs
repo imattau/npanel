@@ -244,6 +244,7 @@ async fn gateway(nostr: Arc<FakeNostr>) -> Gateway {
         last_prune,
         tunnels: tunnels.clone(),
         dashboard_host: "panel.example.com".into(),
+        ncc_pubkey: None,
     }));
     let app = Arc::new(App {
         dashboard_host: "panel.example.com".into(),

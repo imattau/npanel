@@ -296,6 +296,7 @@ async fn run(config: Config, log: Logger) -> Result<()> {
         last_prune,
         tunnels: tunnels.clone(),
         dashboard_host: config.dashboard_host.clone(),
+        ncc_pubkey: config.ncc_pubkey.clone(),
     }));
     let dashboard = dashboard::Dashboard::new(dashboard::source(), &config.dashboard_host, log);
     dashboard.warm();

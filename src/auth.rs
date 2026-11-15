@@ -9,6 +9,7 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 
 use crate::nostr::Event;
+use crate::nostr::{event::is_hex64, nip19::{self, Decoded}};
 
 /// NIP-98 HTTP auth event kind.
 pub const NIP98_KIND: i64 = 27235;
@@ -40,6 +41,7 @@ pub fn verify_nip98(
     path_and_query: &str,
     body: &[u8],
     dashboard_host: &str,
+    ncc_pubkey: Option<&str>,
     now: i64,
 ) -> Result<Event, AuthError> {
     let Some(header) = header else {
@@ -80,7 +82,13 @@ pub fn verify_nip98(
         return fail("Auth event u tag is not a valid URL.");
     };
     let signed_host = signed.host_str().unwrap_or("");
-    if !signed_host.eq_ignore_ascii_case(dashboard_host) {
+    let hostname_matches = signed_host.eq_ignore_ascii_case(dashboard_host);
+    let ncc_identity_matches = signed.scheme() == "ncc"
+        && signed.port().is_none()
+        && signed.username().is_empty()
+        && signed.password().is_none()
+        && ncc_pubkey.is_some_and(|expected| ncc_url_host_matches(signed_host, expected));
+    if !hostname_matches && !ncc_identity_matches {
         return fail(format!("Auth event was signed for {signed_host}, not {dashboard_host}."));
     }
     let requested = url::Url::parse(&format!("http://request{path_and_query}")).ok();
@@ -98,6 +106,15 @@ pub fn verify_nip98(
     }
 
     Ok(event)
+}
+
+/// Match an NCC URL host to the server's configured service identity.
+/// NCC addresses may use either the bech32 npub or canonical hex spelling.
+fn ncc_url_host_matches(host: &str, expected_pubkey: &str) -> bool {
+    if is_hex64(host) {
+        return host.eq_ignore_ascii_case(expected_pubkey);
+    }
+    matches!(nip19::decode(host), Ok(Decoded::Npub(pubkey)) if pubkey.eq_ignore_ascii_case(expected_pubkey))
 }
 
 /// A signed `Authorization` header: a tunnel agent's, and tests'.
@@ -119,7 +136,7 @@ mod tests {
     const NOW: i64 = 1_800_000_000;
 
     fn check(header: &str, method: &str, path: &str, body: &[u8]) -> Result<Event, AuthError> {
-        verify_nip98(Some(header), method, path, body, "panel.example.com", NOW)
+        verify_nip98(Some(header), method, path, body, "panel.example.com", None, NOW)
     }
 
     #[test]
@@ -140,7 +157,7 @@ mod tests {
         let other = sign_nip98(SECRET, "GET", "https://evil.example.com/api/me", None, NOW);
         assert!(check(&other, "GET", "/api/me", b"").unwrap_err().0.contains("signed for evil.example.com"));
 
-        assert!(verify_nip98(None, "GET", "/", b"", "x", NOW).unwrap_err().0.starts_with("Missing"));
+        assert!(verify_nip98(None, "GET", "/", b"", "x", None, NOW).unwrap_err().0.starts_with("Missing"));
         assert!(check("Bearer x", "GET", "/", b"").unwrap_err().0.contains("Nostr scheme"));
         assert!(check("Nostr !!!", "GET", "/", b"").unwrap_err().0.contains("base64"));
 

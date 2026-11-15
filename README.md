@@ -152,11 +152,12 @@ runs on another machine than the server, and reads no config file.
 
 One TOML file, `npanel.toml`: the one `--config` names, or else
 `~/.config/npanel/npanel.toml` or `/etc/npanel/npanel.toml`.
-[`npanel.example.toml`](npanel.example.toml) lists all seven settings:
+[`npanel.example.toml`](npanel.example.toml) lists all settings:
 
 | Setting           | Default     | Meaning                                     |
 | ----------------- | ----------- | ------------------------------------------- |
 | `dashboard_host`  | —           | Hostname that serves the dashboard and API; required |
+| `ncc_pubkey`      | —           | NCC service identity accepted in NIP-98 URLs; optional |
 | `data_dir`        | `/var/lib/npanel` as root, else `~/.local/share/npanel` | Holds the SQLite database and the blob store |
 | `port`            | `3000`      | Port the HTTP server listens on             |
 | `bind_address`    | `127.0.0.1` | Address it listens on; only the proxy should reach it |

@@ -4,7 +4,7 @@ npanel splits configuration in two.
 
 **The config file** covers things the process needs before it can talk to a
 database, plus anything that could lock an admin out of the dashboard if it were
-set wrong. It has seven settings, and changing them needs a restart.
+set wrong. Changing them needs a restart.
 
 **Runtime settings** cover everything else. They live in the `settings` table,
 are edited by admins on the dashboard's Settings page, take effect immediately
@@ -29,9 +29,20 @@ environment variables.
 [`dashboard_host`](#dashboard_host) is required. A key npanel doesn't know is
 refused, naming the key, so a typo can't go unnoticed.
 
-On Docker, `compose.yaml` writes the file, filling in `dashboard_host` and
-`log_level` from `DASHBOARD_HOST` and `LOG_LEVEL` in compose's own `.env`. See
+On Docker, `compose.yaml` writes the file, filling in `dashboard_host`,
+`ncc_pubkey`, and `log_level` from `DASHBOARD_HOST`, `NCC_PUBKEY`, and
+`LOG_LEVEL` in compose's own `.env`. See
 [deployment](deployment.md#docker-compose).
+
+### `ncc_pubkey`
+
+Optional. The NCC service identity, as an `npub` or 64-character hex public
+key. When configured, NIP-98 auth accepts request URLs using
+`ncc://<service-npub>/...` only when the URL host identifies this key. Requests
+for the configured `dashboard_host` continue to work as before. The signed
+method, path, query, timestamp, and body are still checked normally. This lets
+the same dashboard API authenticate requests made through NCC resolution
+without accepting arbitrary NCC identities.
 
 ### `port`
 

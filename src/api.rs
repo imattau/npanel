@@ -86,6 +86,7 @@ pub struct ApiDeps {
     pub last_prune: LastPrune,
     pub tunnels: Arc<Tunnels>,
     pub dashboard_host: String,
+    pub ncc_pubkey: Option<String>,
 }
 
 type Deps = Arc<ApiDeps>;
@@ -315,6 +316,7 @@ async fn authenticate(State(deps): State<Deps>, Extension(body): Extension<RawBo
         path_and_query,
         &body.0,
         &deps.dashboard_host,
+        deps.ncc_pubkey.as_deref(),
         crate::util::now(),
     ) {
         Ok(event) => event,
@@ -1796,14 +1798,14 @@ const CODE_EXPIRED: &str = "That code has expired, or was already answered. Run 
 
 /// The signed event a tunnel's request carries. Its key is proved the way a
 /// user's is, but there is no row in `users` to look for: a tunnel is its row.
-fn tunnel_auth(headers: &HeaderMap, method: &Method, uri: &Uri, body: &RawBody, dashboard_host: &str) -> Result<crate::nostr::Event, ApiError> {
+fn tunnel_auth(headers: &HeaderMap, method: &Method, uri: &Uri, body: &RawBody, dashboard_host: &str, ncc_pubkey: Option<&str>) -> Result<crate::nostr::Event, ApiError> {
     let path_and_query = uri.path_and_query().map_or(uri.path(), |pq| pq.as_str());
     let header = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
-    verify_nip98(header, method.as_str(), path_and_query, &body.0, dashboard_host, crate::util::now()).map_err(|error| ApiError::Unauthorized(error.0))
+    verify_nip98(header, method.as_str(), path_and_query, &body.0, dashboard_host, ncc_pubkey, crate::util::now()).map_err(|error| ApiError::Unauthorized(error.0))
 }
 
-fn agent_key(headers: &HeaderMap, method: &Method, uri: &Uri, body: &RawBody, dashboard_host: &str) -> Result<String, ApiError> {
-    Ok(tunnel_auth(headers, method, uri, body, dashboard_host)?.pubkey)
+fn agent_key(headers: &HeaderMap, method: &Method, uri: &Uri, body: &RawBody, dashboard_host: &str, ncc_pubkey: Option<&str>) -> Result<String, ApiError> {
+    Ok(tunnel_auth(headers, method, uri, body, dashboard_host, ncc_pubkey)?.pubkey)
 }
 
 fn tunnel_where(conn: &Connection, column: &str, value: &str) -> rusqlite::Result<Option<Tunnel>> {
@@ -1828,7 +1830,7 @@ fn pending_status(deps: &Deps, pending: &Pending) -> Value {
 /// Where the agent signing the request stands: a tunnel, waiting for an
 /// admin, refused, or unknown.
 async fn own_tunnel(State(deps): State<Deps>, method: Method, uri: Uri, headers: HeaderMap, Extension(body): Extension<RawBody>) -> ApiResult {
-    let pubkey = agent_key(&headers, &method, &uri, &body, &deps.dashboard_host)?;
+    let pubkey = agent_key(&headers, &method, &uri, &body, &deps.dashboard_host, deps.ncc_pubkey.as_deref())?;
     let key = pubkey.clone();
     if let Some(tunnel) = deps.db.call(move |conn| Ok(tunnel_where(conn, "pubkey", &key)?)).await? {
         return ok(json!({ "status": "authorized", "hostname": tunnel.hostname, "enabled": tunnel.enabled }));
@@ -1855,7 +1857,7 @@ async fn request_tunnel(
         target: String,
     }
 
-    let pubkey = agent_key(&headers, &method, &uri, &body, &deps.dashboard_host)?;
+    let pubkey = agent_key(&headers, &method, &uri, &body, &deps.dashboard_host, deps.ncc_pubkey.as_deref())?;
     let Ask { name, target } = body.json("Expected a JSON body with name and target.")?;
     let name = agent_label(&name, 64).ok_or_else(|| bad("Give the tunnel a name of up to 64 characters."))?;
     let target = agent_label(&target, 200).ok_or_else(|| bad("Give the target as an address of up to 200 characters."))?;
@@ -1873,7 +1875,7 @@ async fn request_tunnel(
 
 /// An authorized agent connecting, which turns the connection into a tunnel.
 async fn connect_tunnel(State(deps): State<Deps>, Extension(client): Extension<ClientAddress>, Extension(body): Extension<RawBody>, request: Request) -> ApiResult {
-    let auth = tunnel_auth(request.headers(), request.method(), request.uri(), &body, &deps.dashboard_host)?;
+    let auth = tunnel_auth(request.headers(), request.method(), request.uri(), &body, &deps.dashboard_host, deps.ncc_pubkey.as_deref())?;
     let pubkey = auth.pubkey.clone();
     let target = request.headers().get(TARGET_HEADER).and_then(|v| v.to_str().ok()).and_then(|v| agent_label(v, 200));
 

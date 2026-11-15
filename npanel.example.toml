@@ -1,7 +1,7 @@
 # npanel configuration. npanel reads the file --config names, or else the
 # first of ~/.config/npanel/npanel.toml and /etc/npanel/npanel.toml.
 #
-# These seven settings are the whole file. Everything else (relays, Blossom
+# These settings are the whole file. Everything else (relays, Blossom
 # fallbacks, file size limits, resync interval) is configured by an admin from
 # the dashboard and stored in the database. Only dashboard_host is required;
 # the rest are shown with their defaults.
@@ -10,6 +10,11 @@
 # any other Host header are served as nsites. Use "localhost" for local
 # development; see docs/development.md.
 dashboard_host = "panel.example.com"
+
+# NCC identity, when the dashboard is also opened through an ncc:// address.
+# NIP-98 requests signed for ncc://<this identity>/... are accepted in addition
+# to requests signed for dashboard_host. Leave unset for hostname-only setups.
+# ncc_pubkey = "npub1..."
 
 # Directory holding npanel.sqlite3 and the content-addressed blob store. A
 # relative path is relative to this file. Defaults to /var/lib/npanel as root,

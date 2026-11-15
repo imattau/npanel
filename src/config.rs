@@ -17,6 +17,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 
 use crate::log::LogLevel;
+use crate::nostr::{event::is_hex64, nip19::{self, Decoded}};
 
 /// Where a packaged npanel's configuration is.
 pub const SYSTEM_PATH: &str = "/etc/npanel/npanel.toml";
@@ -47,6 +48,8 @@ pub struct Config {
     /// Hostname serving the dashboard and JSON API. Requests with any other
     /// `Host` header are served as nsites.
     pub dashboard_host: String,
+    /// Nostr identity whose `ncc://` service address may be used in NIP-98 URLs.
+    pub ncc_pubkey: Option<String>,
     /// Minimum severity of emitted log entries.
     pub log_level: LogLevel,
     /// Directory holding the database and the blob store.
@@ -64,6 +67,7 @@ struct File {
     tls_check_port: Option<u16>,
     https_port: Option<u16>,
     dashboard_host: Option<String>,
+    ncc_pubkey: Option<String>,
     log_level: Option<String>,
     data_dir: Option<PathBuf>,
 }
@@ -172,6 +176,22 @@ impl Config {
         }
         let dashboard_host = strip_port(&dashboard_host).to_string();
 
+        // NCC NIP-98 URLs bind requests to the dashboard's service identity
+        // rather than to its network hostname. Keep this optional so normal
+        // hostname deployments retain their existing behavior.
+        let ncc_pubkey = file.ncc_pubkey.as_deref().and_then(|value| {
+            let value = value.trim();
+            (!value.is_empty()).then_some(value)
+        }).map(|value| {
+            if is_hex64(value) {
+                return Ok(value.to_ascii_lowercase());
+            }
+            match nip19::decode(value) {
+                Ok(Decoded::Npub(pubkey)) => Ok(pubkey.to_ascii_lowercase()),
+                _ => bail!("ncc_pubkey must be an npub or a 64-character hex public key."),
+            }
+        }).transpose()?;
+
         let log_level = match file.log_level {
             None => LogLevel::Info,
             Some(value) => match LogLevel::parse(&value.to_lowercase()) {
@@ -187,7 +207,7 @@ impl Config {
             None => env.default_data_dir()?,
         };
 
-        Ok(Self { source, port, bind_address, tls_check_port, https_port, dashboard_host, log_level, data_dir })
+        Ok(Self { source, port, bind_address, tls_check_port, https_port, dashboard_host, ncc_pubkey, log_level, data_dir })
     }
 
     /// Path of the SQLite database file.
