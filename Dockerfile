@@ -45,8 +45,8 @@ COPY --from=dashboard /app/dashboard/dist ./dashboard/dist
 # The registry and the target directory are caches of the builder's, so a
 # source change rebuilds npanel and not its dependencies.
 ARG TARGETARCH
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+RUN --mount=type=cache,id=npanel-cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=npanel-target-${TARGETARCH},target=/src/target \
     set -eu; \
     case "$TARGETARCH" in \
       amd64) arch=x86_64 ;; \
