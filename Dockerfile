@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # npanel in a container: the binary a release publishes, built the same way by
 # the same script (contrib/release/build.sh), static and with the dashboard
 # compiled in.
