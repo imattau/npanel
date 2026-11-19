@@ -34,3 +34,13 @@ and existing hostname-based nsite serving keep their usual routes.
 Npanel does not create or publish the NCC service locator. Configure the NCC
 service's locator event and endpoint in the NCC sidecar/browser setup. This
 path selector lets one such service expose multiple enabled nsites.
+
+## Administrators
+
+Npanel keeps its own `users` table, so an NCC node administrator is not
+automatically an Npanel administrator. A deployment that wants the two lists
+in step can drive the [users API](api.md#users--admin) with NIP-98 from a key
+that is already an Npanel admin: `POST /api/users` creates the user as staff,
+then `PATCH /api/users/<pubkey>` promotes it to `admin`. The operator key is
+made an admin at install time with `npanel make-admin`, which is what makes
+the first such call possible.

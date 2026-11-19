@@ -51,6 +51,24 @@ Roles:
 
 Routes marked **admin** below return `403` for staff.
 
+### Calling it from a script
+
+A process on the server can use the same API. Connect to the plain HTTP
+listener on `port` and send the dashboard's name in the `Host` header. Npanel
+routes by host, so a request addressed to `127.0.0.1` is treated as an nsite
+and answers `404 This domain is not configured.`:
+
+```
+GET /api/users HTTP/1.1
+Host: panel.example.com
+Authorization: Nostr <base64 event>
+```
+
+The event signs `https://panel.example.com/api/users`. The `u` tag names
+`dashboard_host`, not the loopback address; its scheme and port are ignored,
+as above. The signing key must already be in `users` — a local process cannot
+bootstrap itself through this API. That is what `npanel make-admin` is for.
+
 ## Certificates
 
 Certificate authorization for the reverse proxy is **not part of this API**. It
@@ -873,8 +891,9 @@ unresolved, and how many reports came in over the last 24 hours.
 { "pubkey": "npub1...", "role": "staff" }
 ```
 
-`role` defaults to `staff`. Accepts npub, nprofile, or hex. `201`, or `409` if
-they already have access.
+`role` defaults to `staff`. Accepts npub, nprofile, or hex. `201` with the
+new user's `pubkey`, `npub` and `role`, or `409` if they already have access.
+A missing or malformed `pubkey` is `400`.
 
 ### `PATCH /api/users/:pubkey`
 
@@ -882,9 +901,13 @@ they already have access.
 { "role": "admin" }
 ```
 
+`200` with the updated user. A role other than `admin` or `staff` is `400`,
+and a key with no access is `404`.
+
 ### `DELETE /api/users/:pubkey`
 
-Removes the user and their grants.
+Removes the user and their grants. `200` with `{ "ok": true }`, or `404` when
+the key has no access.
 
 Demoting or deleting the last admin is `409` — there is no way to lock every
 admin out of the dashboard through the API. (`npanel make-admin` is the way
