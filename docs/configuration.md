@@ -38,11 +38,14 @@ On Docker, `compose.yaml` writes the file, filling in `dashboard_host`,
 
 Optional. The NCC service identity, as an `npub` or 64-character hex public
 key. When configured, NIP-98 auth accepts request URLs using
-`ncc://<service-npub>/...` only when the URL host identifies this key. Requests
-for the configured `dashboard_host` continue to work as before. The signed
-method, path, query, timestamp, and body are still checked normally. This lets
-the same dashboard API authenticate requests made through NCC resolution
-without accepting arbitrary NCC identities.
+`ncc://<service-npub>/...` only when the URL host identifies this key.
+ncc-browser loads the page from `ncc://<service-npub>.<service>/...` instead —
+the service is part of the page's origin — and that form is accepted too: the
+identity is the label before the first dot. Requests for the configured
+`dashboard_host` continue to work as before. The signed method, path, query,
+timestamp, and body are still checked normally. This lets the same dashboard
+API authenticate requests made through NCC resolution without accepting
+arbitrary NCC identities.
 
 ### `port`
 
