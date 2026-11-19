@@ -109,12 +109,47 @@ pub fn verify_nip98(
 }
 
 /// Match an NCC URL host to the server's configured service identity.
+///
 /// NCC addresses may use either the bech32 npub or canonical hex spelling.
+/// ncc-browser has two forms: a reader types and sees
+/// `ncc://<npub>/<service>/…`, but the document it loads uses
+/// `ncc://<npub>.<service>/…` so the service is part of the page's origin.
+/// Both put the same identity first, so the identity is everything before the
+/// first dot and anything after it is the browser's service label, not part of
+/// the address. Accepting it grants no new authority: a signature for the bare
+/// npub is already accepted for any path, and the signature still has to be
+/// made by an `npanel` user.
 fn ncc_url_host_matches(host: &str, expected_pubkey: &str) -> bool {
-    if is_hex64(host) {
-        return host.eq_ignore_ascii_case(expected_pubkey);
+    let Some(identity) = ncc_host_identity(host) else {
+        return false;
+    };
+    if is_hex64(identity) {
+        return identity.eq_ignore_ascii_case(expected_pubkey);
     }
-    matches!(nip19::decode(host), Ok(Decoded::Npub(pubkey)) if pubkey.eq_ignore_ascii_case(expected_pubkey))
+    matches!(nip19::decode(identity), Ok(Decoded::Npub(pubkey)) if pubkey.eq_ignore_ascii_case(expected_pubkey))
+}
+
+/// The identity label of an NCC host: the whole host in the address form, or
+/// the label before ncc-browser's service label in the document form.
+fn ncc_host_identity(host: &str) -> Option<&str> {
+    match host.split_once('.') {
+        None => Some(host),
+        Some((identity, service)) if is_ncc_service_label(service) => Some(identity),
+        Some(_) => None,
+    }
+}
+
+/// A hostname label ncc-browser uses for a service: a readable
+/// `[a-z0-9][a-z0-9-]{0,40}` name, or `x-` plus base32 for a service id that
+/// cannot be a hostname label. Only the shape is checked here; the identity
+/// before the dot is what authenticates the server.
+fn is_ncc_service_label(label: &str) -> bool {
+    !label.is_empty()
+        && label.len() <= 180
+        && label.starts_with(|first: char| first.is_ascii_alphanumeric())
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// A signed `Authorization` header: a tunnel agent's, and tests'.
@@ -131,12 +166,18 @@ pub fn sign_nip98(secret: &str, method: &str, url: &str, body: Option<&[u8]>, no
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::nostr::event::public_key;
 
     const SECRET: &str = "0000000000000000000000000000000000000000000000000000000000000003";
     const NOW: i64 = 1_800_000_000;
 
     fn check(header: &str, method: &str, path: &str, body: &[u8]) -> Result<Event, AuthError> {
         verify_nip98(Some(header), method, path, body, "panel.example.com", None, NOW)
+    }
+
+    fn ncc_check(url: &str, pubkey: Option<&str>) -> Result<Event, AuthError> {
+        let header = sign_nip98(SECRET, "GET", url, None, NOW);
+        verify_nip98(Some(&header), "GET", "/api/me", b"", "panel.example.com", pubkey, NOW)
     }
 
     #[test]
@@ -164,5 +205,60 @@ mod tests {
         // Dated so far off that subtracting overflows.
         let ancient = sign_nip98(SECRET, "GET", "https://panel.example.com/api/me", None, i64::MIN);
         assert!(check(&ancient, "GET", "/api/me", b"").unwrap_err().0.contains("expired"));
+    }
+
+    #[test]
+    fn accepts_both_ncc_address_forms() {
+        let pubkey = public_key(SECRET);
+        let npub = nip19::npub_encode(&pubkey);
+        let hex = pubkey.as_str();
+
+        // The address a reader types, and the one npanel links to itself.
+        assert!(ncc_check(&format!("ncc://{npub}/api/me"), Some(&pubkey)).is_ok());
+        // ncc-browser loads the document from a per-service origin, where the
+        // service label is part of the host: ncc://<npub>.<service>/…
+        assert!(ncc_check(&format!("ncc://{npub}.npanel/api/me"), Some(&pubkey)).is_ok());
+        // The canonical hex spelling works the same way.
+        assert!(ncc_check(&format!("ncc://{hex}.npanel/api/me"), Some(&pubkey)).is_ok());
+        // An origin with a base32 service label is just as valid.
+        assert!(ncc_check(&format!("ncc://{npub}.x-nrxxa/api/me"), Some(&pubkey)).is_ok());
+
+        // Without ncc_pubkey configured, no NCC host is accepted at all.
+        assert!(ncc_check(&format!("ncc://{npub}.npanel/api/me"), None).is_err());
+    }
+
+    #[test]
+    fn rejects_ncc_hosts_for_another_identity() {
+        let pubkey = public_key(SECRET);
+        let other = public_key("0000000000000000000000000000000000000000000000000000000000000004");
+        let other_npub = nip19::npub_encode(&other);
+
+        for host in [other.clone(), other_npub] {
+            let error = ncc_check(&format!("ncc://{host}/api/me"), Some(&pubkey)).unwrap_err();
+            assert!(error.0.contains("was signed for"), "unexpected error: {}", error.0);
+            let error = ncc_check(&format!("ncc://{host}.npanel/api/me"), Some(&pubkey)).unwrap_err();
+            assert!(error.0.contains("was signed for"), "unexpected error: {}", error.0);
+        }
+    }
+
+    #[test]
+    fn rejects_hosts_that_are_not_an_ncc_service_origin() {
+        let pubkey = public_key(SECRET);
+        let npub = nip19::npub_encode(&pubkey);
+
+        // Not the ncc scheme: the service origin only applies there.
+        assert!(ncc_check(&format!("https://{npub}.npanel/api/me"), Some(&pubkey)).is_err());
+        // A port makes it an ordinary URL, not an NCC origin.
+        assert!(ncc_check(&format!("ncc://{npub}.npanel:8445/api/me"), Some(&pubkey)).is_err());
+        // A suffix of more than one label is a different hostname, not a
+        // service label.
+        assert!(ncc_check(&format!("ncc://{npub}.npanel.example/api/me"), Some(&pubkey)).is_err());
+        // A label has to be shaped like one ncc-browser can produce.
+        assert!(ncc_check(&format!("ncc://{npub}._npanel/api/me"), Some(&pubkey)).is_err());
+        assert!(is_ncc_service_label("npanel"));
+        assert!(is_ncc_service_label("x-nrxxa"));
+        assert!(!is_ncc_service_label(""));
+        assert!(!is_ncc_service_label("npanel.example"));
+        assert!(!is_ncc_service_label("Npanel"));
     }
 }

@@ -4,6 +4,16 @@ Release notes, one section per version. `ngit release publish` takes the
 section matching the tag it publishes, so every release needs one here before
 it is tagged.
 
+## [0.7.3]
+
+- Signing in through the NCC Browser works. ncc-browser loads a service from
+  the per-service origin `ncc://<npub>.<service>` (the address a reader types,
+  `ncc://<npub>/<service>/…`, is only the form it redirects from), and NIP-98
+  auth only accepted the bare npub. Every authenticated request from the
+  dashboard was refused with "Auth event was signed for npub1….npanel, not
+  <dashboard_host>". Both forms are accepted now, and the service label still
+  has to look like one ncc-browser can produce.
+
 ## [0.7.2]
 
 - The `naddr` in `Nsite-Location`, and a host's `naddr` in the API, name
