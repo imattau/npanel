@@ -970,6 +970,7 @@ mod tests {
             created_by: String::new(),
             created_at: 0,
             updated_at: 0,
+            ncc_only: false,
         };
         let origin = RequestOrigin { hostname: "docs.example.com".into(), scheme: "https" };
         // Down to the key order: any change rebuilds every host.
